@@ -110,27 +110,33 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_cohere import ChatCohere
 
+# Load PDF names from pdffiles.txt
+with open("pdfiles.txt", "r") as file:
+    pdf_files = [line.strip() for line in file]
+# Join the PDF files with commas for the preamble
+pdf_files_str = ", ".join(pdf_files)
+
 # Data models
 class QuestionVerification(BaseModel):
     """Checks if the question is related to climate change or global warming topics."""
     query: str = Field(description="The query to evaluate.")
 
 class web_search(BaseModel):
-    """
-    The internet. Use web_search for questions that are related to anything else than Climate change anxiety, Rexdale Action Plans, and Toronto Climate Action plans.
-    """
-    query: str = Field(description="The query to use when searching the internet.")
+   f"""
+   The internet. Use web_search for questions that are related to anything else than {pdf_files_str}.
+   """
+   query: str = Field(description="The query to use when searching the internet.")
 
 class vectorstore(BaseModel):
-    """
-    A vectorstore containing documents related to Climate change anxiety, Rexdale Action Plans, and Toronto Climate Action plans. Use the vectorstore for questions on these topics.
+    f"""
+    A vectorstore containing documents related to {pdf_files_str}. Use the vectorstore for questions on these topics.
     """
     query: str = Field(description="The query to use when searching the vectorstore.")
 
 # Preamble ***NOTE PLEASE MODIFY HERE THE NAMES OF THE PDFS YOU USE OR IT WONT SEND TO THE RIGHT ACTIONS***
-preamble = """
-You are an intelligent assistant trained to first evaluate if a user's question is saying hi or introducing themselves then if then content relates in any way to climate change topics or the enviroment and if not, do not answer.
-If the question is related to climate change, decide whether to use the vectorstore containing documents on Climate Change Anxiety, Rexdale Action Plans, and Toronto Climate Action Plans, or to route climate change topics or global warning question to general web search for other inquiries.
+preamble = f"""
+You are an intelligent assistant trained to first evaluate if a user's question is saying hi or introducing themselves then if the content relates in any way to climate change topics or the enviroment and if not, do not answer.
+If the question is related to climate change, decide whether to use the vectorstore containing documents on {pdf_files_str}, or to route climate change topics or global warming question to general web search.
 """
 
 # Set up the LLM with the ability to make routing decisions
@@ -331,17 +337,18 @@ def llm_fallback(state):
     print("---LLM Fallback---")
     question = state["question"]
     generation = llm_chain.invoke({"question": question})
+    
     return {"question": question, "generation": generation}
 
-def generate(state):
+def rag(state):
     """
-    Generate answer using the vectorstore
+    Generate answer using the documents
 
     Args:
         state (dict): The current graph state
 
     Returns:
-        state (dict): New key added to state, generation, that contains LLM generation
+        state (dict): New key added to state, generation
     """
     print("---GENERATE---")
     question = state["question"]
@@ -351,6 +358,7 @@ def generate(state):
 
     # RAG generation
     generation = rag_chain.invoke({"documents": documents, "question": question})
+    
     return {"documents": documents, "question": question, "generation": generation}
 
 def grade_documents(state):
@@ -419,9 +427,9 @@ def not_related_response(state):
     Returns:
         str: A message indicating that the question is not related to climate change
     """
-
-    #print("Sorry, this question is not related to climate change. Do you have any questions related to the topic?")
-    return {"generation": "Sorry, this question is not related to climate change. Do you have any questions related to the topic?"}
+    question = state["question"]
+    generation = "Sorry, this question is not related to climate change. Do you have any questions related to the topic?"
+    return {"question": question ,"generation": generation}
 
 def web_search(state):
     """
@@ -441,7 +449,7 @@ def web_search(state):
     docs = web_search_tool.invoke({"query": question})
     web_results = "\n".join([d["content"] for d in docs])
     web_results = Document(page_content=web_results)
-
+    
     return {"documents": web_results, "question": question}
 
 ### Edges ###
@@ -454,8 +462,10 @@ def route_question(state):
         state (dict): The current graph state
 
     Returns:
-        str: Next node to call, or None if the question is not related to climate change
+        str: Next node to call
     """
+    #Maryam
+    #or None if the question is not related to climate change
 
     print("---ROUTE QUESTION---")
     next_node = verify_question(state)
@@ -494,7 +504,7 @@ def decide_to_generate(state):
     """
 
     print("---ASSESS GRADED DOCUMENTS---")
-    question = state["question"]
+    #question = state["question"]
     filtered_documents = state["documents"]
 
     if not filtered_documents:
@@ -505,7 +515,7 @@ def decide_to_generate(state):
     else:
         # We have relevant documents, so generate answer
         print("---DECISION: GENERATE---")
-        return "generate"
+        return "rag"
 
 def grade_generation_v_documents_and_question(state):
     """
@@ -547,6 +557,26 @@ def grade_generation_v_documents_and_question(state):
         pprint.pprint("---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS, RE-TRY---")
         return "not supported"
 
+def generate(state):
+    """
+    Return genaration
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        state (dict): The current graph state including question, documents and generation
+    """
+    print("---GENERATE---")
+    question = state["question"]
+    documents = state["documents"]
+    if not isinstance(documents, list):
+      documents = [documents]
+
+    generation = state['generation']
+    
+    return {"documents": documents, "question": question, "generation": generation}
+
 import pprint
 
 from langgraph.graph import END, StateGraph
@@ -557,21 +587,22 @@ workflow = StateGraph(GraphState)
 workflow.add_node("web_search", web_search) # web search
 workflow.add_node("retrieve", retrieve) # retrieve
 workflow.add_node("grade_documents", grade_documents) # grade documents
-workflow.add_node("generate", generate) # rag
+workflow.add_node("rag", rag) # rag
 workflow.add_node("llm_fallback", llm_fallback) # llm
 workflow.add_node("not_related_response", not_related_response) # not related
-
+workflow.add_node("generate",generate)
 
 workflow.set_conditional_entry_point(
     route_question,
     {
-        "web_search": "web_search",
         "retrieve": "retrieve",
         "not_related": "not_related_response",
         "llm_fallback": "llm_fallback",
     },
 )
-workflow.add_edge("web_search", "generate")
+workflow.add_edge("llm_fallback", "generate")
+workflow.add_edge("not_related_response", "generate")
+workflow.add_edge("web_search", "rag")
 workflow.add_edge("retrieve", "grade_documents")
 
 workflow.add_conditional_edges(
@@ -579,20 +610,18 @@ workflow.add_conditional_edges(
     decide_to_generate,
     {
         "web_search": "web_search",
-        "generate": "generate",
+        "rag": "rag",
     },
 )
 workflow.add_conditional_edges(
-    "generate",
+    "rag",
     grade_generation_v_documents_and_question,
     {
-        "not supported": "generate", # Hallucinations: re-generate
+        "not supported": "web_search", # Hallucinations: re-generate
         "not useful": "web_search", # Fails to answer question: fall-back to web-search
-        "useful": END,
+        "useful": "generate"
     },
 )
-workflow.add_edge("llm_fallback", END)
-workflow.add_edge("not_related_response", END)
+workflow.add_edge("generate", END)
+
 app = workflow.compile()
-
-
