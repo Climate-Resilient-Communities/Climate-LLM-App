@@ -21,9 +21,6 @@ from azure.storage.blob import BlobServiceClient
 import os
 import shutil
 
-# Load environment variables from .env file
-load_dotenv('secrets.env')
-
 # Check for required environment variables
 required_env_vars = ['COHERE_API_KEY', 'LANGCHAIN_TRACING_V2', 'LANGCHAIN_ENDPOINT', 'LANGCHAIN_API_KEY', 'TAVILY_API_KEY']
 missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
