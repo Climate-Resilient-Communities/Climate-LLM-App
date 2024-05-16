@@ -1,63 +1,53 @@
-# Climate-LLM-App
+# Wlecome to Climate LLM App 🌍
 
-## Overview
-The Climate-LLM-App is a multilingual chatbot designed to increase climate risk awareness in Toronto. Utilizing advanced language models, it provides users with information on how to mitigate, prepare for, and respond to climate risks in their neighborhoods.
-
-## Features
-- **Multilingual Support**: Offers services in multiple languages relevant to Toronto's diverse population.
-- **Interactive Chat**: Engage with the chatbot in natural language to learn about climate risks.
-- **Data-Driven Insights**: Access the latest research and data on climate change impacts in Toronto.
-
-## Getting Started
+## Introduction
+Welcome to the LLM APP, your go-to application for leveraging language model capabilities seamlessly. Dive into our simple setup process and get started with the power of LLM in no time!
 
 ### Prerequisites
-Before you begin, ensure you have the following installed:
+Before you start, ensure you have the following installed:
+- Python 3.8 or higher
 - Git
-- Python 3.x (for backend development)
-- Node.js (for frontend development, if applicable)
 
-### Installation
+## Installation
 
-1. **Clone the Repository**
+Follow these steps to get the LLM APP up and running on your machine:
 
-    ```sh
-    git clone https://github.com/<your-username>/Climate-LLM-App.git
-    cd Climate-LLM-App
-    ```
+#### 1. Clone the Repository
+To get started, clone the repo and switch to the development branch:
+```bash
+git clone https://github.com/Climate-Resilient-Communities/Climate-LLM-App.git
+cd Climate-LLM-App
+git checkout Dev
 
-2. **Set Up the Development Environment**
 
-    For Python:
-    ```sh
-    python3 -m venv venv
-    source venv/bin/activate  # On Unix/MacOS
-    venv\Scripts\activate  # On Windows
-    pip install -r requirements.txt
-    ```
+#### 2: Install Requirements
+Install all the necessary dependencies:
 
-    For Node.js:
-    ```sh
-    npm install
-    ```
+pip install -r requirements.txt
 
-3. **Running the Application**
+#### 3: Set Up Your API Keys
+Create a secrets.env file in the root directory. Make sure to read the API Documentation for details on how to configure your API keys.
 
-    To start the server:
-    ```sh
-    flask run  # For Flask applications
-    npm start  # For Node.js applications
-    ```
+#### 3: Get the embeddng folder from Google drive
+Pull the embeddings from: https://drive.google.com/drive/folders/1bXr9gdLUu-avgqYVVeSI9K5DY2tzIg83?usp=drive_link
 
-## Usage
-This is open soure model and chat, please prompt the model to climate change questions only. 
+#### 4: Run the Application
+Execute the application:
 
-## Contributing
-We welcome contributions from the community. Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for more details on how to submit pull requests, report issues, or suggest enhancements.
+python app.py
 
-## License
-This project is licensed under the [MIT License](LICENSE). See the LICENSE file for more details.
+#### 5: Enjoy!
+Congratulations, you are all set! Explore the capabilities of your new LLM APP. :rocket:
 
-## Acknowledgements
-- Mention any organizations, datasets, or tools that have been instrumental in the development of this project.
-- Thank contributors, advisors, and the community for their input and support.
+Support
+For support, feel free to open an issue on the GitHub repository issues page.
 
+License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+Contributions
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
+
+Check out our contribution guidelines for more information on how to contribute to the LLM APP.
+
+Happy Coding! 🚀
