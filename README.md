@@ -1,4 +1,4 @@
-# Wlecome to Climate LLM App 🌍
+# Welcome to Climate LLM App 🌍
 
 ## Introduction
 Welcome to the LLM APP, your go-to application for leveraging language model capabilities seamlessly. Dive into our simple setup process and get started with the power of LLM in no time!
