@@ -177,7 +177,7 @@ import langchain
 from langchain_core.messages import HumanMessage
 
 # Preamble
-preamble = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. You need to be friendly, factual and can use up to 1 paragraph and bullet points to explain thoroughly."""
+preamble = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know.  Your responses should be conversational, friendly, and effectively address the question without merely extracting from the page. Ensure that your answers are free of jargon and written at a grade 8 or 9 reading level for better accessibility. Feel free to provide thorough explanations using a paragraph and bullet points when necessary."""
 
 # LLM
 llm = ChatCohere(model_name="command-r-plus", temperature=0).bind(preamble=preamble)
@@ -270,9 +270,9 @@ class GraphState(TypedDict):
     generation: str
     documents: List[str]
 
-# Use Dask for parallel retrieval
 @dask.delayed
 def fetch_vectorstore_documents(question):
+    retriever = get_embeddings()  # Get the retriever
     return retriever.invoke(question)
 
 @dask.delayed
