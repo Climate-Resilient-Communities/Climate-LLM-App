@@ -58,7 +58,7 @@ def main():
 
     with col1:
         add_vertical_space(1)
-        st.image("CCicon.png", width=100)
+        st.image("CCCicon.png", width=100)
 
     with col2:
         st.title("Climate Change Chatbot")
