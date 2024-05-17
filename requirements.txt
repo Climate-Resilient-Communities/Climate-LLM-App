@@ -18,4 +18,4 @@ streamlit==1.33.0
 langchain_community==0.0.33
 azure-storage-blob
 python-dotenv
-dask distributed
+dask[distributed]
