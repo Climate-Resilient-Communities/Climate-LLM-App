@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
-import asyncio
 import os
-from dotenv import load_dotenv
 import warnings
+import pickle
+import json
+import asyncio
+import numpy as np
+import shutil
+from dotenv import load_dotenv
 from typing import List
+from azure.storage.blob import BlobServiceClient
 from langchain_community.vectorstores import Chroma
 from langchain_cohere import CohereEmbeddings
-from langchain_community.document_loaders import UnstructuredPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -15,14 +18,19 @@ from langchain_cohere import ChatCohere
 from langchain.schema import Document
 from typing_extensions import TypedDict
 from langgraph.graph import END, StateGraph
-import dask
 from dask.distributed import Client
-from azure.storage.blob import BlobServiceClient
-import os
-import shutil
+import cohere
+from pinecone import Pinecone, ServerlessSpec # type: ignore
+from pinecone_text.sparse import BM25Encoder # type: ignore
+
+# Load environment variables from .env file
+load_dotenv('secrets.env')
 
 # Check for required environment variables
-required_env_vars = ['COHERE_API_KEY', 'LANGCHAIN_TRACING_V2', 'LANGCHAIN_ENDPOINT', 'LANGCHAIN_API_KEY', 'TAVILY_API_KEY']
+required_env_vars = [
+    'COHERE_API_KEY', 'LANGCHAIN_TRACING_V2', 'LANGCHAIN_ENDPOINT', 'LANGCHAIN_API_KEY',
+    'TAVILY_API_KEY', 'AZURE_STORAGE_CONNECTION_STRING', 'PINECONE_API_KEY'
+]
 missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
 
 if missing_vars:
@@ -42,6 +50,27 @@ warnings.filterwarnings("ignore", category=Warning)
 if __name__ == "__main__":
     client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
 
+# Initialize Cohere client
+cohere_api_key = os.getenv('COHERE_API_KEY')
+cohere_client = cohere.Client(api_key=cohere_api_key)
+
+# Initialize Pinecone
+pinecone_api_key = os.getenv("PINECONE_API_KEY")
+pinecone_client = Pinecone(api_key=pinecone_api_key)
+index_name = "climate-change-adaptation-index"
+spec = ServerlessSpec(cloud='aws', region='us-east1')
+
+# Check if the index exists, if not, create it
+if index_name not in pinecone_client.list_indexes().names():
+    pinecone_client.create_index(
+        name=index_name,
+        dimension=1024,
+        metric="dotproduct",
+        spec=spec
+    )
+index = pinecone_client.Index(index_name)
+
+# Azure Blob Storage Utilities
 def download_blob_to_local_file(container_name, blob_name, download_file_path):
     # Get connection string from environment variable
     connect_str = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
@@ -56,7 +85,7 @@ def download_blob_to_local_file(container_name, blob_name, download_file_path):
     with open(download_file_path, "wb") as download_file:
         download_file.write(blob_client.download_blob().readall())
 
-def download_embeddings_folder(container_name, local_folder_path):
+def download_reference_folder(container_name, local_folder_path):
     # Get connection string from environment variable
     connect_str = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
 
@@ -81,35 +110,28 @@ def download_embeddings_folder(container_name, local_folder_path):
         # Download the blob
         download_blob_to_local_file(container_name, blob.name, blob_download_path)
 
-# Set embeddings
-def load_embeddings():
-    container_name = "embeddings"
-    local_folder_path = "./embeddings"
+# Load data from Azure Blob Storage
+def load_data():
+    container_name = "reference"
+    local_folder_path = "./reference"
 
-    # Download the embeddings folder from Azure Blob Storage
-    download_embeddings_folder(container_name, local_folder_path)
+    # Download the reference folder from Azure Blob Storage
+    download_reference_folder(container_name, local_folder_path)
 
-    # Set embeddings
-    embd = CohereEmbeddings()
+    # Load data
+    with open(os.path.join(local_folder_path, 'bm25_encoder_model.pkl'), 'rb') as file:
+        bm25 = pickle.load(file)
 
-    # Load the vectorstore from the downloaded embeddings folder
-    loaded_vectorstore = Chroma(
-        persist_directory=local_folder_path,
-        embedding_function=embd
-    )
+    with open(os.path.join(local_folder_path, 'markdown_chunked_docs.json')) as json_file:
+        markdown_chunked_docs = json.load(json_file)
 
-    # Create a retriever from the loaded_vectorstore
-    retriever = loaded_vectorstore.as_retriever()
+    with open(os.path.join(local_folder_path, 'pdfiles.txt'), 'r') as file:
+        pdf_files = [line.strip() for line in file]
 
-    return retriever
+    return bm25, markdown_chunked_docs, pdf_files
 
-def get_embeddings():
-    return load_embeddings()
-
-# Load PDF names from pdffiles.txt
-with open("pdfiles.txt", "r") as file:
-    pdf_files = [line.strip() for line in file]
-
+# Load data from Azure Blob Storage
+bm25, markdown_chunked_docs, pdf_files = load_data()
 pdf_files_str = ", ".join(pdf_files)
 
 # Data models
@@ -163,7 +185,7 @@ structured_llm_grader = llm.with_structured_output(GradeDocuments, preamble=prea
 
 grade_prompt = ChatPromptTemplate.from_messages(
     [
-        ("human", "Retrieved document: \n\n {document} \n\n User question: {question}"),
+        ("human", "Retrieved document: \n\n {document} \n\n User question: {question}")
     ]
 )
 
@@ -173,11 +195,85 @@ retrieval_grader = grade_prompt | structured_llm_grader
 
 from langchain import hub
 from langchain_core.output_parsers import StrOutputParser
-import langchain
 from langchain_core.messages import HumanMessage
 
 # Preamble
-preamble = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know.  Your responses should be conversational, friendly, and effectively address the question without merely extracting from the page. Ensure that your answers are free of jargon and written at a grade 8 or 9 reading level for better accessibility. Feel free to provide thorough explanations using a paragraph and bullet points when necessary."""
+preamble="""
+You are an expert in climate change and global warming. You will be answering questions from a broad audience that includes high school students and professionals. You should adopt the persona of an educator, providing information that is both accessible and engaging.
+
+Persona:
+Consider yourself an educator for both youth and adults.
+Ensure your responses are helpful, harmless, and honest.
+
+Language:
+Easy to read and understand for grade 9 students.
+
+Tone and Style:
+Friendly and approachable
+Free of jargon
+Factual and accurate
+
+Content Requirements:
+Detailed and complete responses
+Use bullet points for clarity
+Provide intuitive examples when possible
+
+Leverage Constitutional AI:
+Align your responses with human values.
+Ensure your answers are designed to avoid harm, respect preferences, and provide true information.
+
+Example Question: What is climate change and why should we care?
+Response:
+Let's talk about climate change and why it matters to all of us.
+
+**What is Climate Change?**
+
+- **Definition:** Climate change means big changes in the usual weather patterns (like temperatures and rainfall) that happen over a long time. These changes can be natural, but right now, they’re mostly caused by human activities.
+- **Key Factors:**
+
+  - **Greenhouse Gases (GHGs):** When we burn fossil fuels (like coal, oil, and natural gas) for energy, it releases gases that trap heat in the atmosphere.
+
+  - **Global Warming:** This is when the Earth's average temperature gets higher because of those trapped gases.
+
+**Why Should We Care?**
+
+- **Impact on Weather:**
+
+  - **Extreme Weather Events:** More frequent and intense heatwaves, hurricanes, and heavy rainstorms can lead to serious damage and danger.
+  - **Changing Weather Patterns:** This can mess up farming seasons, causing problems with growing food.
+
+- **Environmental Effects:**
+  - **Melting Ice Caps and Rising Sea Levels:** This can lead to flooding in places where people live, causing them to lose their homes.
+  - **Biodiversity Loss:** Animals and plants might not survive or have to move because their habitats are changing.
+
+- **Human Health and Safety:**
+  - **Health Risks:** More air pollution and hotter temperatures can cause health problems like asthma and heat strokes.
+  - **Economic Impact:** Fixing damage from extreme weather and dealing with health problems can cost a lot of money.
+
+**What Can We Do to Help?**
+
+- **Reduce Carbon Footprint:**
+
+  - **Energy Efficiency:** Use devices that save energy, like LED bulbs and efficient appliances.
+  - **Renewable Energy:** Support and use energy sources like solar and wind power that don not produce GHGs.
+
+- **Adopt Sustainable Practices:**
+
+  - **Reduce, Reuse, Recycle:** Cut down on waste by following these three steps.
+  - **Sustainable Transport:** Use public transport, bike, or walk instead of driving when you can.
+**Why Your Actions Matter:**
+
+- **Collective Impact:** When lots of people make small changes, it adds up to a big positive effect on our planet.
+- **Inspiring Others:** Your actions can encourage friends, family, and your community to also take action.
+**Let's Make a Difference Together!**
+
+  - **Stay Informed:** Read up on climate change from trustworthy sources to know what is happening.
+  - **Get Involved:** Join local or online groups that work on climate action.
+  
+**Questions or Curious About Something?**
+
+Feel free to ask any questions or share your thoughts. We are all in this together, and every little bit helps!
+"""
 
 # LLM
 llm = ChatCohere(model_name="command-r-plus", temperature=0).bind(preamble=preamble)
@@ -187,7 +283,7 @@ prompt = lambda x: ChatPromptTemplate.from_messages(
     [
         HumanMessage(
             f"Question: {x['question']} \nAnswer: ",
-            additional_kwargs={"documents": x["documents"]},
+            additional_kwargs={"documents": x["documents"]}
         )
     ]
 )
@@ -231,7 +327,7 @@ structured_llm_grader = llm.with_structured_output(GradeHallucinations, preamble
 # Prompt
 hallucination_prompt = ChatPromptTemplate.from_messages(
     [
-        ("human", "Set of facts: \n\n {documents} \n\n LLM generation: {generation}"),
+        ("human", "Set of facts: \n\n {documents} \n\n LLM generation: {generation}")
     ]
 )
 
@@ -255,7 +351,7 @@ structured_llm_grader = llm.with_structured_output(GradeAnswer, preamble=preambl
 # Prompt
 answer_prompt = ChatPromptTemplate.from_messages(
     [
-        ("human", "User question: \n\n {question} \n\n LLM generation: {generation}"),
+        ("human", "User question: \n\n {question} \n\n LLM generation: {generation}")
     ]
 )
 
@@ -269,29 +365,22 @@ class GraphState(TypedDict):
     question: str
     generation: str
     documents: List[str]
+    citations: str
 
-@dask.delayed
-def fetch_vectorstore_documents(question):
-    retriever = get_embeddings()  # Get the retriever
-    return retriever.invoke(question)
+async def fetch_web_search_results(query):
+    return await web_search_tool.ainvoke({"query": query})
 
-@dask.delayed
-def fetch_web_search_results(query):
-    return web_search_tool.invoke({"query": query})
-
-@dask.delayed
-def fetch_llm_response(question):
-    return llm_chain.invoke({"question": question})
+async def fetch_llm_response(question):
+    return await llm_chain.ainvoke({"question": question})
 
 async def retrieve(state):
     question = state["question"]
-    vectorstore_docs = fetch_vectorstore_documents(question)
-    web_search_results = fetch_web_search_results(question)
-    llm_response = fetch_llm_response(question)
-    
-    delayed_results = [vectorstore_docs, web_search_results, llm_response]
-    results = dask.compute(*delayed_results)
-    return {"documents": results[0], "question": question}
+
+    # Perform hybrid search to get initial set of documents
+    reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)
+    documented_docs = [Document(page_content=docs['section_text'], metadata={'filename': docs['header']}) for docs in reranked_docs]
+
+    return {"documents": documented_docs, "question": question}
 
 async def llm_fallback(state):
     question = state["question"]
@@ -301,20 +390,26 @@ async def llm_fallback(state):
 async def rag(state):
     question = state["question"]
     documents = state["documents"]
+    citations = state["citations"]
+
     if not isinstance(documents, list):
         documents = [documents]
+    
     generation = await rag_chain.ainvoke({"documents": documents, "question": question})
-    return {"documents": documents, "question": question, "generation": generation}
+    return {"documents": documents, "citations":citations, "question": question, "generation": generation}
 
 async def grade_documents(state):
     question = state["question"]
     documents = state["documents"]
-
-    tasks = [retrieval_grader.ainvoke({"question": question, "document": d.page_content}) for d in documents]
-    scores = await asyncio.gather(*tasks)
-
-    filtered_docs = [d for d, score in zip(documents, scores) if score.binary_score == "yes"]
-    return {"documents": filtered_docs, "question": question}
+    
+    filtered_docs = []
+    for d in documents:
+        score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
+        grade = score.binary_score
+        if grade == "yes":
+            filtered_docs.append(d)
+    citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
+    return {"documents": filtered_docs, "citations": citations, "question": question}
 
 async def verify_question(state):
     question = state["question"]
@@ -334,14 +429,100 @@ async def not_related_response(state):
     generation = "Sorry, this question is not related to climate change. Do you have any questions related to the topic?"
     return {"question": question, "generation": generation}
 
-async def web_search(state):
+def web_search(state):
     question = state["question"]
-    docs = await web_search_tool.ainvoke({"query": question})
+    docs = web_search_tool.invoke({"query": question})
     web_results = "\n".join([d["content"] for d in docs])
     web_results = Document(page_content=web_results)
-    return {"documents": web_results, "question": question}
+    citations = "  \n".join([d["url"] for d in docs])
+    return {"documents": web_results, "citations": citations, "question": question}
 
-### Edges ###
+# Hybrid Search and Re-ranking
+
+def get_dense_embeddings_query(query):
+    try:
+        response = cohere_client.embed(
+            model='embed-english-v3.0',
+            input_type="search_query",
+            texts=[query],
+            truncate='END'
+        )
+        return np.asarray(response.embeddings)
+    except Exception as e:
+        print(f"Error getting embeddings: {str(e)}")
+        return None
+
+def weight_by_alpha(sparse_embedding, dense_embedding, alpha):
+    if alpha < 0 or alpha > 1:
+        raise ValueError("Alpha must be between 0 and 1")
+    hsparse = {
+        'indices': sparse_embedding['indices'],
+        'values': [v * (1 - alpha) for v in sparse_embedding['values']]
+    }
+    hdense = [v * alpha for v in dense_embedding]
+    return hsparse, hdense
+
+def get_hybrid_results(query, bm25, alpha, top_k):
+    query_sparse_embedding = bm25.encode_queries(query)
+    query_dense_embedding = get_dense_embeddings_query(query)
+    try:
+        scaled_sparse, scaled_dense = weight_by_alpha(query_sparse_embedding, query_dense_embedding[0], alpha)
+        hybrid = index.query(
+            vector=scaled_dense,
+            sparse_vector=scaled_sparse,
+            top_k=top_k,
+            include_metadata=True
+        )
+        return hybrid
+    except Exception as e:
+        print(f"Error querying index: {str(e)}")
+        return None
+
+def rerank_fcn(query, bm25, alpha, top_k):
+    try:
+        hybrid = get_hybrid_results(query, bm25, alpha, top_k)
+        if hybrid is None or "matches" not in hybrid:
+            print("Error: No matches found in hybrid results.")
+            return []
+
+        docs_to_rerank = [doc.get('metadata') for doc in hybrid.get("matches")]
+    
+        # Filter out documents with only empty or whitespace-only fields
+        valid_docs_to_rerank = []
+        for doc in docs_to_rerank:
+            if doc:
+                valid_doc = {field: value for field, value in doc.items() if field != 'order_id' and value and value.strip()}
+                if valid_doc:
+                    valid_docs_to_rerank.append(valid_doc)
+
+        if not valid_docs_to_rerank:
+            print("No valid documents to rerank.")
+            return []
+
+        # Prepare the documents in the expected format for Cohere Rerank API
+        formatted_docs = [{"text": " ".join(doc.values())} for doc in valid_docs_to_rerank]
+
+        rerank_results = cohere_client.rerank(
+            query=query,
+            documents=formatted_docs,
+            top_n=top_k,
+            model="rerank-english-v3.0"
+        )
+
+        docs_retrieved = [valid_docs_to_rerank[doc.index] for doc in rerank_results.results]
+        
+        for doc in docs_retrieved:
+            section_splits_list = markdown_chunked_docs[doc['header']][doc['section_header']]
+            section_text = " "
+            for split in section_splits_list:
+                section_text = "".join(split[1])
+                doc['section_text'] = section_text
+
+        return docs_retrieved
+    
+    except Exception as e:
+        print(f"Error in reranking: {str(e)}")
+        return []
 
 async def route_question(state):
     next_node = await verify_question(state)
@@ -381,10 +562,12 @@ async def grade_generation_v_documents_and_question(state):
 async def generate(state):
     question = state["question"]
     documents = state["documents"]
+    citations = state["citations"]
+
     if not isinstance(documents, list):
         documents = [documents]
-    generation = state['generation']
-    return {"documents": documents, "question": question, "generation": generation}
+    
+    return {"documents": documents, "citations":citations, "question": question, "generation": state['generation']}
 
 workflow = StateGraph(GraphState)
 
@@ -402,7 +585,7 @@ workflow.set_conditional_entry_point(
         "retrieve": "retrieve",
         "not_related": "not_related_response",
         "llm_fallback": "llm_fallback",
-    },
+    }
 )
 workflow.add_edge("llm_fallback", "generate")
 workflow.add_edge("not_related_response", "generate")
@@ -415,7 +598,7 @@ workflow.add_conditional_edges(
     {
         "web_search": "web_search",
         "rag": "rag",
-    },
+    }
 )
 workflow.add_conditional_edges(
     "rag",
@@ -424,7 +607,7 @@ workflow.add_conditional_edges(
         "not supported": "web_search",
         "not useful": "web_search",
         "useful": "generate"
-    },
+    }
 )
 workflow.add_edge("generate", END)
 
