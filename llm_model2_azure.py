@@ -9,8 +9,6 @@ import shutil
 from dotenv import load_dotenv
 from typing import List
 from azure.storage.blob import BlobServiceClient
-from langchain_cohere import CohereEmbeddings
-from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_cohere import ChatCohere
@@ -23,7 +21,7 @@ from pinecone import Pinecone, ServerlessSpec # type: ignore
 from pinecone_text.sparse import BM25Encoder # type: ignore
 
 # Load environment variables from .env file
-load_dotenv('secrets.env')
+load_dotenv()
 
 # Check for required environment variables
 required_env_vars = [
@@ -45,29 +43,8 @@ os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY')
 # Suppress all warnings of type Warning (superclass of all warnings)
 warnings.filterwarnings("ignore", category=Warning)
 
-# Initialize Dask client inside main guard
-if __name__ == "__main__":
-    client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
-
-# Initialize Cohere client
-cohere_api_key = os.getenv('COHERE_API_KEY')
-cohere_client = cohere.Client(api_key=cohere_api_key)
-
-# Initialize Pinecone
-pinecone_api_key = os.getenv("PINECONE_API_KEY")
-pinecone_client = Pinecone(api_key=pinecone_api_key)
-index_name = "climate-change-adaptation-index"
-spec = ServerlessSpec(cloud='aws', region='us-east1')
-
-# Check if the index exists, if not, create it
-if index_name not in pinecone_client.list_indexes().names():
-    pinecone_client.create_index(
-        name=index_name,
-        dimension=1024,
-        metric="dotproduct",
-        spec=spec
-    )
-index = pinecone_client.Index(index_name)
+# Initialize Dask client
+client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
 
 # Azure Blob Storage Utilities
 def download_blob_to_local_file(container_name, blob_name, download_file_path):
@@ -111,7 +88,7 @@ def download_reference_folder(container_name, local_folder_path):
 
 # Load data from Azure Blob Storage
 def load_data():
-    container_name = "reference"
+    container_name = "refrence"  # Ensure this matches the container name
     local_folder_path = "./reference"
 
     # Download the reference folder from Azure Blob Storage
@@ -129,7 +106,7 @@ def load_data():
 
     return bm25, markdown_chunked_docs, pdf_files
 
-# Load data from Azure Blob Storage
+# Load data
 bm25, markdown_chunked_docs, pdf_files = load_data()
 pdf_files_str = ", ".join(pdf_files)
 
