@@ -9,7 +9,6 @@ import shutil
 from dotenv import load_dotenv
 from typing import List
 from azure.storage.blob import BlobServiceClient
-from langchain_community.vectorstores import Chroma
 from langchain_cohere import CohereEmbeddings
 from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain_core.prompts import ChatPromptTemplate
