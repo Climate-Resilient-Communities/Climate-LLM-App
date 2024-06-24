@@ -27,12 +27,14 @@ def get_initial_session_state():
 async def run_chat(question, context):
     inputs = {"question": question, "context": context}
     response_text = ""
+    citations = ""
     try:
         result = await run_workflow(inputs)
         response_text = result["generation"]
+        citations = result["citations"]
     except Exception as e:
         response_text = str(e)
-    return response_text
+    return response_text, citations
 
 def simulate_typing(response):
     for word in response.split():
@@ -87,19 +89,28 @@ def main():
             response = st.session_state.session_state["cached_responses"][prompt]
         else:
             context = st.session_state.session_state["context"]
-            response = asyncio.run(run_chat(prompt, context))
-            st.session_state.session_state["cached_responses"][prompt] = response
+            #response = asyncio.run(run_chat(prompt, context))
+            #st.session_state.session_state["cached_responses"][prompt] = response
+            response, citations = asyncio.run(run_chat(prompt, context))
+            st.session_state.session_state["cached_responses"][prompt] = (response, citations)
+
 
         st.session_state.session_state["messages"].append({"role": "user", "content": prompt})
-        st.session_state.session_state["messages"].append({"role": "assistant", "content": response})
+        #st.session_state.session_state["messages"].append({"role": "assistant", "content": response})
+        st.session_state.session_state["messages"].append({"role": "assistant", "content": response, "citations": citations})
         st.session_state.session_state["messages"] = st.session_state.session_state["messages"][-10:]
         st.session_state.session_state["context"] += f"User: {prompt}\nAssistant: {response}\n"
 
     with response_container:
         for i in range(len(st.session_state.session_state["messages"]) - 1, -1, -2):
             with st.chat_message("assistant"):
-                response_generator = simulate_typing(st.session_state.session_state["messages"][i]["content"])
-                st.write_stream(response_generator)
+                #response_generator = simulate_typing(st.session_state.session_state["messages"][i]["content"])
+                #st.write_stream(response_generator)
+                response = st.session_state.session_state["messages"][i]["content"]
+                citations = st.session_state.session_state["messages"][i]["citations"]
+                st.markdown(response)
+                if citations:
+                    st.markdown(f"**Sources:**  \n {citations}")
 
             if i > 0:
                 with st.chat_message("user"):

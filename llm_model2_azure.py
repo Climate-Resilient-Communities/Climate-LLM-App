@@ -336,7 +336,6 @@ async def fetch_llm_response(question):
 
 async def retrieve(state):
     question = state["question"]
-
     # Perform hybrid search to get initial set of documents
     reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)
     documented_docs = [Document(page_content=docs['section_text'], metadata={'filename': docs['header']}) for docs in reranked_docs]
@@ -474,10 +473,8 @@ def rerank_fcn(query, bm25, alpha, top_k):
         
         for doc in docs_retrieved:
             section_splits_list = markdown_chunked_docs[doc['header']][doc['section_header']]
-            section_text = " "
-            for split in section_splits_list:
-                section_text = "".join(split[1])
-                doc['section_text'] = section_text
+            section_text = ' '.join([split[1] for split in section_splits_list])
+            doc['section_text'] = section_text
 
         return docs_retrieved
     
