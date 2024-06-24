@@ -5,10 +5,8 @@ import pickle
 import json
 import asyncio
 import numpy as np
-import shutil
 from dotenv import load_dotenv
 from typing import List
-from azure.storage.blob import BlobServiceClient
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_cohere import ChatCohere
@@ -26,7 +24,7 @@ load_dotenv()
 # Check for required environment variables
 required_env_vars = [
     'COHERE_API_KEY', 'LANGCHAIN_TRACING_V2', 'LANGCHAIN_ENDPOINT', 'LANGCHAIN_API_KEY',
-    'TAVILY_API_KEY', 'AZURE_STORAGE_CONNECTION_STRING', 'PINECONE_API_KEY'
+    'TAVILY_API_KEY', 'PINECONE_API_KEY'
 ]
 missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
 
@@ -40,68 +38,55 @@ os.environ['LANGCHAIN_ENDPOINT'] = os.getenv('LANGCHAIN_ENDPOINT')
 os.environ['LANGCHAIN_API_KEY'] = os.getenv('LANGCHAIN_API_KEY')
 os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY')
 
+# Set up Cohere client and choose model
+cohere_api_key = os.getenv('COHERE_API_KEY')
+cohere_client = cohere.Client(api_key=cohere_api_key)
+
+# Initialize Pinecone
+pinecone_api_key = os.getenv("PINECONE_API_KEY")
+pinecone_client = Pinecone(api_key=pinecone_api_key)
+index_name = "climate-change-adaptation-index"
+spec = ServerlessSpec(cloud='aws', region='us-east1')
+
+# Check if the index exists, if not, create it
+if index_name not in pinecone_client.list_indexes().names():
+    pinecone_client.create_index(
+        name=index_name,
+        dimension=1024,
+        metric="dotproduct",
+        spec=spec
+    )
+index = pinecone_client.Index(index_name)
+
 # Suppress all warnings of type Warning (superclass of all warnings)
 warnings.filterwarnings("ignore", category=Warning)
 
 # Initialize Dask client
 client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
 
-# Azure Blob Storage Utilities
-def download_blob_to_local_file(container_name, blob_name, download_file_path):
-    # Get connection string from environment variable
-    connect_str = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
+# Local Paths
+local_folder_path = "./pdf"
+bm25_model_path = os.path.join(local_folder_path, 'bm25_encoder_model.pkl')
+corpus_path = os.path.join(local_folder_path, 'corpus_June16.txt')
+markdown_docs_path = os.path.join(local_folder_path, 'markdown_chunked_docs.json')
+pdf_files_path = os.path.join(local_folder_path, 'pdfiles.txt')
 
-    # Create the BlobServiceClient object
-    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+# Ensure the files exist
+if not all(os.path.exists(path) for path in [bm25_model_path, corpus_path, markdown_docs_path, pdf_files_path]):
+    raise FileNotFoundError("One or more required files are missing from the 'pdf' directory.")
 
-    # Create a blob client
-    blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
-
-    # Download the blob to a local file
-    with open(download_file_path, "wb") as download_file:
-        download_file.write(blob_client.download_blob().readall())
-
-def download_reference_folder(container_name, local_folder_path):
-    # Get connection string from environment variable
-    connect_str = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
-
-    # Create the BlobServiceClient object
-    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
-
-    # Get the container client
-    container_client = blob_service_client.get_container_client(container_name)
-
-    # Ensure local directory exists
-    if os.path.exists(local_folder_path):
-        shutil.rmtree(local_folder_path)  # Clear the directory if it exists
-    os.makedirs(local_folder_path)
-
-    # List and download blobs
-    blob_list = container_client.list_blobs()
-    for blob in blob_list:
-        # Define the path where the blob will be downloaded
-        blob_download_path = os.path.join(local_folder_path, blob.name)
-        # Create directories if they do not exist
-        os.makedirs(os.path.dirname(blob_download_path), exist_ok=True)
-        # Download the blob
-        download_blob_to_local_file(container_name, blob.name, blob_download_path)
-
-# Load data from Azure Blob Storage
+# Load data from local files
 def load_data():
-    container_name = "refrence"  # Ensure this matches the container name
-    local_folder_path = "./reference"
-
-    # Download the reference folder from Azure Blob Storage
-    download_reference_folder(container_name, local_folder_path)
-
-    # Load data
-    with open(os.path.join(local_folder_path, 'bm25_encoder_model.pkl'), 'rb') as file:
+    # Load BM25 model
+    with open(bm25_model_path, 'rb') as file:
         bm25 = pickle.load(file)
 
-    with open(os.path.join(local_folder_path, 'markdown_chunked_docs.json')) as json_file:
+    # Load markdown chunked documents
+    with open(markdown_docs_path) as json_file:
         markdown_chunked_docs = json.load(json_file)
 
-    with open(os.path.join(local_folder_path, 'pdfiles.txt'), 'r') as file:
+    # Load PDF file names
+    with open(pdf_files_path, 'r') as file:
         pdf_files = [line.strip() for line in file]
 
     return bm25, markdown_chunked_docs, pdf_files
