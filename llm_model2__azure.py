@@ -13,19 +13,21 @@ from langchain_cohere import ChatCohere
 from langchain.schema import Document
 from typing_extensions import TypedDict
 from langgraph.graph import END, StateGraph
+import dask
 from dask.distributed import Client
 import cohere
 from pinecone import Pinecone, ServerlessSpec # type: ignore
 from pinecone_text.sparse import BM25Encoder # type: ignore
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv('secrets.env')
 
 # Check for required environment variables
 required_env_vars = [
     'COHERE_API_KEY', 'LANGCHAIN_TRACING_V2', 'LANGCHAIN_ENDPOINT', 'LANGCHAIN_API_KEY',
     'TAVILY_API_KEY', 'PINECONE_API_KEY'
 ]
+
 missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
 
 if missing_vars:
@@ -62,7 +64,11 @@ index = pinecone_client.Index(index_name)
 warnings.filterwarnings("ignore", category=Warning)
 
 # Initialize Dask client
-client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
+#client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
+
+# Initialize Dask client inside main guard
+if __name__ == "__main__":
+    client = Client(n_workers=4, threads_per_worker=2, memory_limit='2GB')
 
 # Local Paths
 local_folder_path = "./pdf"
