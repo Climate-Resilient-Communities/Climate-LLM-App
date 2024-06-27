@@ -371,11 +371,12 @@ async def grade_documents(state):
     filtered_docs = []
     for d in documents:
         score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
-        grade = score.binary_score
+        grade = score.binary_score if score.binary_score in ["yes", "no"] else "no"  # Default to "no" if score is missing
         if grade == "yes":
             filtered_docs.append(d)
     citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
     return {"documents": filtered_docs, "citations": citations, "question": question}
+
 
 async def verify_question(state):
     question = state["question"]
