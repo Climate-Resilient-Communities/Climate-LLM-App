@@ -45,7 +45,7 @@ def main():
     st.set_page_config(page_icon=None, page_title="Multilingual Climate Chatbot", layout="centered", initial_sidebar_state="auto", menu_items=None)
 
     with st.sidebar:
-        st.title(' 🌍 Multilingual Climate Chatbot')
+        st.title('Multilingual Climate Chatbot')
         st.markdown('''
             ## About
             This app is an AI-powered chatbot built using:
@@ -54,19 +54,22 @@ def main():
             - The purpose of this app is to educate individuals about climate change and foster a community of informed citizens. It provides accurate information and resources about climate change and its impacts, and encourages users to take action in their own communities.
         ''')
         add_vertical_space(5)
-        st.image("tree.ico", width=20)
-        st.write('Made By Climate Resilient Communities')
+        st.markdown('<div>Made by:</div>', unsafe_allow_html=True)
+        st.image("tree.ico", width=40)
+        st.markdown('<div style="font-size: 18px;">Climate Resilient Communities</div>', unsafe_allow_html=True)
+
+
 
     col1, col2 = st.columns([1, 8])
 
     with col1:
         add_vertical_space(1)
-        st.image("CCCicon.png", width=100)
+        st.image("CCCicon.png", width=80)  # Adjust the size here
+        add_vertical_space(4)  # Adjust spacing to move image down
 
     with col2:
-        st.title("Climate Change Chatbot")
-
-    st.write("Ask me anything about climate change!")
+        st.title("Multilingual Climate Chatbot")
+        st.write("Ask me anything about climate change!")
 
     if "session_state" not in st.session_state:
         st.session_state.session_state = get_initial_session_state()
@@ -86,32 +89,24 @@ def main():
                 with st.chat_message("user"):
                     st.markdown(st.session_state.session_state["messages"][i - 1]["content"])
 
-    input_container = st.container()
     colored_header(label='', description='', color_name='blue-30')
 
-    with input_container:
-        if len(st.session_state.session_state["messages"]) >= 10:
-            st.write("Sorry, you've reached the limit of messages you can send. Please restart the session.")
-            if st.button("Restart Session", key="restart_button", help="Click to restart the session"):
-                st.session_state.session_state = get_initial_session_state()
-                st.experimental_rerun()
-            prompt = None
-        else:
-            prompt = st.chat_input("What would you like to know about climate change?")
+    if len(st.session_state.session_state["messages"]) < 10:
+        prompt = st.chat_input("What would you like to know about climate change?")
 
-    if prompt:
-        if prompt in st.session_state.session_state["cached_responses"]:
-            response, citations = st.session_state.session_state["cached_responses"][prompt]
-        else:
-            context = st.session_state.session_state["context"]
-            response, citations = asyncio.run(run_chat(prompt, context))
-            st.session_state.session_state["cached_responses"][prompt] = (response, citations)
+        if prompt:
+            if prompt in st.session_state.session_state["cached_responses"]:
+                response, citations = st.session_state.session_state["cached_responses"][prompt]
+            else:
+                context = st.session_state.session_state["context"]
+                response, citations = asyncio.run(run_chat(prompt, context))
+                st.session_state.session_state["cached_responses"][prompt] = (response, citations)
 
-        st.session_state.session_state["messages"].append({"role": "user", "content": prompt})
-        st.session_state.session_state["messages"].append({"role": "assistant", "content": response, "citations": citations})
-        st.session_state.session_state["messages"] = st.session_state.session_state["messages"][-10:]
-        st.session_state.session_state["context"] += f"User: {prompt}\nAssistant: {response}\n"
-        st.experimental_rerun()  # Rerun to update the display
+            st.session_state.session_state["messages"].append({"role": "user", "content": prompt})
+            st.session_state.session_state["messages"].append({"role": "assistant", "content": response, "citations": citations})
+            st.session_state.session_state["messages"] = st.session_state.session_state["messages"][-10:]
+            st.session_state.session_state["context"] += f"User: {prompt}\nAssistant: {response}\n"
+            st.experimental_rerun()  # Rerun to update the display
 
 if __name__ == "__main__":
     main()
