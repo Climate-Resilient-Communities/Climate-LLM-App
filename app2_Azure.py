@@ -42,10 +42,10 @@ def simulate_typing(response):
         time.sleep(0.05)
 
 def main():
-    st.set_page_config(page_icon=None, page_title="Climate Change Chatbot", layout="centered", initial_sidebar_state="auto", menu_items=None)
+    st.set_page_config(page_icon=None, page_title="Multilingual Climate Chatbot", layout="centered", initial_sidebar_state="auto", menu_items=None)
 
     with st.sidebar:
-        st.title(' 🌍 Climate Change App')
+        st.title(' 🌍 Multilingual Climate Chatbot')
         st.markdown('''
             ## About
             This app is an AI-powered chatbot built using:
@@ -54,7 +54,8 @@ def main():
             - The purpose of this app is to educate individuals about climate change and foster a community of informed citizens. It provides accurate information and resources about climate change and its impacts, and encourages users to take action in their own communities.
         ''')
         add_vertical_space(5)
-        st.write('Made By 🌳 Climate Change Communities')
+        st.image("tree.ico", width=20)
+        st.write('Made By Climate Resilient Communities')
 
     col1, col2 = st.columns([1, 8])
 
@@ -70,9 +71,23 @@ def main():
     if "session_state" not in st.session_state:
         st.session_state.session_state = get_initial_session_state()
 
+    response_container = st.container()
+
+    with response_container:
+        for i in range(len(st.session_state.session_state["messages"]) - 1, -1, -2):
+            with st.chat_message("assistant"):
+                response = st.session_state.session_state["messages"][i]["content"]
+                citations = st.session_state.session_state["messages"][i].get("citations", "")
+                st.markdown(response)
+                if citations:
+                    st.markdown(f"**Sources:**  \n {citations}")
+
+            if i > 0:
+                with st.chat_message("user"):
+                    st.markdown(st.session_state.session_state["messages"][i - 1]["content"])
+
     input_container = st.container()
     colored_header(label='', description='', color_name='blue-30')
-    response_container = st.container()
 
     with input_container:
         if len(st.session_state.session_state["messages"]) >= 10:
@@ -86,35 +101,17 @@ def main():
 
     if prompt:
         if prompt in st.session_state.session_state["cached_responses"]:
-            response = st.session_state.session_state["cached_responses"][prompt]
+            response, citations = st.session_state.session_state["cached_responses"][prompt]
         else:
             context = st.session_state.session_state["context"]
-            #response = asyncio.run(run_chat(prompt, context))
-            #st.session_state.session_state["cached_responses"][prompt] = response
             response, citations = asyncio.run(run_chat(prompt, context))
             st.session_state.session_state["cached_responses"][prompt] = (response, citations)
 
-
         st.session_state.session_state["messages"].append({"role": "user", "content": prompt})
-        #st.session_state.session_state["messages"].append({"role": "assistant", "content": response})
         st.session_state.session_state["messages"].append({"role": "assistant", "content": response, "citations": citations})
         st.session_state.session_state["messages"] = st.session_state.session_state["messages"][-10:]
         st.session_state.session_state["context"] += f"User: {prompt}\nAssistant: {response}\n"
-
-    with response_container:
-        for i in range(len(st.session_state.session_state["messages"]) - 1, -1, -2):
-            with st.chat_message("assistant"):
-                #response_generator = simulate_typing(st.session_state.session_state["messages"][i]["content"])
-                #st.write_stream(response_generator)
-                response = st.session_state.session_state["messages"][i]["content"]
-                citations = st.session_state.session_state["messages"][i]["citations"]
-                st.markdown(response)
-                if citations:
-                    st.markdown(f"**Sources:**  \n {citations}")
-
-            if i > 0:
-                with st.chat_message("user"):
-                    st.markdown(st.session_state.session_state["messages"][i - 1]["content"])
+        st.experimental_rerun()  # Rerun to update the display
 
 if __name__ == "__main__":
     main()
