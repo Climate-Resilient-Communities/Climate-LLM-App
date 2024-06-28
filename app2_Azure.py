@@ -106,7 +106,7 @@ def main():
             st.session_state.session_state["messages"].append({"role": "assistant", "content": response, "citations": citations})
             st.session_state.session_state["messages"] = st.session_state.session_state["messages"][-10:]
             st.session_state.session_state["context"] += f"User: {prompt}\nAssistant: {response}\n"
-            st.experimental_rerun()  # Rerun to update the display
+            st.rerun()  # Rerun to update the display
 
 if __name__ == "__main__":
     main()

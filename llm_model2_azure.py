@@ -114,8 +114,9 @@ class vectorstore(BaseModel):
 
 # Preamble
 preamble = f"""
-You are an intelligent assistant trained to first evaluate if a user's question is saying hi or introducing themselves then if the content relates in any way to climate change topics or the environment and if not, do not answer.
-If the question is related to climate change, decide whether to use the vectorstore containing documents on {pdf_files_str}, or to route climate change topics or global warming question to general web search.
+You are an intelligent assistant trained to first determine if the user's question is related to climate change.
+If it is, decide whether to use the vectorstore with documents on {pdf_files_str} or route the query to a general web search. 
+If it is not, do not answer.
 """
 
 # Set up the LLM with the ability to make routing decisions
@@ -141,10 +142,11 @@ class GradeDocuments(BaseModel):
     """Binary score for relevance check on retrieved documents."""
     binary_score: str = Field(description="Documents are relevant to the question, 'yes' or 'no'")
 
-# Prompt
-preamble = """You are a grader assessing relevance of a retrieved document to a user question. \n
-If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n
-Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."""
+preamble = """
+You are a grader assessing the relevance of a retrieved document to a user question.\n
+If the retrieved document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.\n
+Give a binary score, 'yes' or 'no' to indicate whether the document is relevant to the quequestion or not.
+"""
 
 # LLM with function call
 llm = ChatCohere(model="command-r-plus", temperature=0)
@@ -342,10 +344,14 @@ async def fetch_llm_response(question):
 
 async def retrieve(state):
     question = state["question"]
-    # Perform hybrid search to get initial set of documents
-    reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)
-    documented_docs = [Document(page_content=docs['section_text'], metadata={'filename': docs['header']}) for docs in reranked_docs]
-
+    reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)    
+    documented_docs = [
+    Document(
+        page_content=docs['section_text'] if len(docs['section_text']) < 20000 else docs['summary_text'],
+        metadata={'filename': docs['header']}
+        ) 
+        for docs in reranked_docs
+        ]   
     return {"documents": documented_docs, "question": question}
 
 async def llm_fallback(state):
@@ -374,7 +380,9 @@ async def grade_documents(state):
         grade = score.binary_score
         if grade == "yes":
             filtered_docs.append(d)
+    
     citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
+
     return {"documents": filtered_docs, "citations": citations, "question": question}
 
 async def verify_question(state):
@@ -477,12 +485,22 @@ def rerank_fcn(query, bm25, alpha, top_k):
 
         docs_retrieved = [valid_docs_to_rerank[doc.index] for doc in rerank_results.results]
         
+        # Eliminate duplicate docs
+        unique_docs_retrieved = []
+        seen = set()
         for doc in docs_retrieved:
+            tup = tuple(doc.items())
+            if tup not in seen:
+                seen.add(tup)
+                unique_docs_retrieved.append(doc)
+
+        # Get section text
+        for doc in unique_docs_retrieved:
             section_splits_list = markdown_chunked_docs[doc['header']][doc['section_header']]
             section_text = ' '.join([split[1] for split in section_splits_list])
             doc['section_text'] = section_text
 
-        return docs_retrieved
+        return unique_docs_retrieved
     
     except Exception as e:
         print(f"Error in reranking: {str(e)}")
@@ -496,7 +514,7 @@ async def route_question(state):
 
 async def decide_to_generate(state):
     filtered_documents = state["documents"]
-
+    
     if not filtered_documents:
         return "web_search"
     else:
