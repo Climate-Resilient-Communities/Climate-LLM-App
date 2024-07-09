@@ -345,19 +345,32 @@ async def fetch_llm_response(question):
 async def retrieve(state):
     question = state["question"]
     reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)    
-    documented_docs = [
-    Document(
-        page_content=docs['section_text'] if len(docs['section_text']) < 20000 else docs['summary_text'],
-        metadata={'filename': docs['header']}
-        ) 
-        for docs in reranked_docs
-        ]   
+
+    documented_docs = []
+    for doc in reranked_docs:
+        section_text = cohere_client.tokenize(text=doc['section_text'], model="command-r-plus")
+        #print('section text tokens: ',len(section_text.tokens))
+
+        if len(section_text.tokens) < 500:
+            documented_docs.append(Document(page_content=doc['section_text'], metadata = {'filename': doc['header']}))
+        else:
+            documented_docs.append(Document(page_content=doc['summary_text'], metadata = {'filename': doc['header']}))
+
+    #documented_docs = [
+    #Document(
+    #    page_content=docs['section_text'] if len(docs['section_text']) < 20000 else docs['summary_text'],
+    #    metadata={'filename': docs['header']}
+    #    ) 
+    #    for docs in reranked_docs
+    #   ]  
+    
     return {"documents": documented_docs, "question": question}
 
 async def llm_fallback(state):
     question = state["question"]
     llm_response = await fetch_llm_response(question)
     return {"question": question, "generation": llm_response}
+
 
 async def rag(state):
     question = state["question"]
@@ -366,7 +379,7 @@ async def rag(state):
 
     if not isinstance(documents, list):
         documents = [documents]
-    
+
     generation = await rag_chain.ainvoke({"documents": documents, "question": question})
     return {"documents": documents, "citations":citations, "question": question, "generation": generation}
 
@@ -378,11 +391,15 @@ async def grade_documents(state):
     for d in documents:
         score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
         grade = score.binary_score
-        if grade == "yes":
-            filtered_docs.append(d)
+        
+        if grade != 'yes':
+            continue  # Skip this document and move to the next one
+        filtered_docs.append(d)
+
+        #if grade == "yes":
+        #   filtered_docs.append(d)
     
     citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
-
     return {"documents": filtered_docs, "citations": citations, "question": question}
 
 async def verify_question(state):
@@ -499,7 +516,6 @@ def rerank_fcn(query, bm25, alpha, top_k):
             section_splits_list = markdown_chunked_docs[doc['header']][doc['section_header']]
             section_text = ' '.join([split[1] for split in section_splits_list])
             doc['section_text'] = section_text
-
         return unique_docs_retrieved
     
     except Exception as e:
@@ -524,8 +540,9 @@ async def grade_generation_v_documents_and_question(state):
     question = state["question"]
     documents = state["documents"]
     generation = state["generation"]
-
+    
     score = await hallucination_grader.ainvoke({"documents": documents, "generation": generation})
+    
     if score is None:
         return generation
 
