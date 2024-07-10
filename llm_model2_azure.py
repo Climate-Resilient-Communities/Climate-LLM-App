@@ -145,7 +145,7 @@ class GradeDocuments(BaseModel):
 preamble = """
 You are a grader assessing the relevance of a retrieved document to a user question.\n
 If the retrieved document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.\n
-Give a binary score, 'yes' or 'no' to indicate whether the document is relevant to the quequestion or not.
+Give a binary score, 'yes' or 'no' score to indicate whether the document is relevant to the quequestion.
 """
 
 # LLM with function call
@@ -349,7 +349,6 @@ async def retrieve(state):
     documented_docs = []
     for doc in reranked_docs:
         section_text = cohere_client.tokenize(text=doc['section_text'], model="command-r-plus")
-        #print('section text tokens: ',len(section_text.tokens))
 
         if len(section_text.tokens) < 500:
             documented_docs.append(Document(page_content=doc['section_text'], metadata = {'filename': doc['header']}))
@@ -390,14 +389,14 @@ async def grade_documents(state):
     filtered_docs = []
     for d in documents:
         score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
-        grade = score.binary_score
-        
-        if grade != 'yes':
-            continue  # Skip this document and move to the next one
-        filtered_docs.append(d)
-
-        #if grade == "yes":
-        #   filtered_docs.append(d)
+        if score is None:
+            continue
+        else:
+            grade = score.binary_score
+            if grade == "yes":
+                filtered_docs.append(d)
+            else:
+                continue
     
     citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
     return {"documents": filtered_docs, "citations": citations, "question": question}
@@ -542,7 +541,6 @@ async def grade_generation_v_documents_and_question(state):
     generation = state["generation"]
     
     score = await hallucination_grader.ainvoke({"documents": documents, "generation": generation})
-    
     if score is None:
         return generation
 
