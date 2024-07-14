@@ -18,6 +18,7 @@ from dask.distributed import Client
 import cohere
 from pinecone import Pinecone, ServerlessSpec # type: ignore
 from pinecone_text.sparse import BM25Encoder # type: ignore
+import time
 
 # Load environment variables from .env file
 load_dotenv('secrets.env')
@@ -345,24 +346,13 @@ async def fetch_llm_response(question):
 async def retrieve(state):
     question = state["question"]
     reranked_docs = rerank_fcn(question, bm25, alpha=0.3, top_k=5)    
-
-    documented_docs = []
-    for doc in reranked_docs:
-        section_text = cohere_client.tokenize(text=doc['section_text'], model="command-r-plus")
-
-        if len(section_text.tokens) < 500:
-            documented_docs.append(Document(page_content=doc['section_text'], metadata = {'filename': doc['header']}))
-        else:
-            documented_docs.append(Document(page_content=doc['summary_text'], metadata = {'filename': doc['header']}))
-
-    #documented_docs = [
-    #Document(
-    #    page_content=docs['section_text'] if len(docs['section_text']) < 20000 else docs['summary_text'],
-    #    metadata={'filename': docs['header']}
-    #    ) 
-    #    for docs in reranked_docs
-    #   ]  
-    
+    documented_docs = [
+    Document(
+        page_content=doc['section_text'] if len(cohere_client.tokenize(text=doc['section_text'], model="command-r-plus").tokens) < 500 else doc['summary_text'],
+        metadata={'filename': doc['header']}
+    )
+    for doc in reranked_docs
+    ]
     return {"documents": documented_docs, "question": question}
 
 async def llm_fallback(state):
@@ -388,15 +378,16 @@ async def grade_documents(state):
     
     filtered_docs = []
     for d in documents:
-        score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
-        if score is None:
-            continue
-        else:
-            grade = score.binary_score
-            if grade == "yes":
-                filtered_docs.append(d)
-            else:
-                continue
+        for _ in range(2):        
+            try:
+                score = await retrieval_grader.ainvoke({"question": question, "document": d.page_content})
+                grade = score.binary_score
+                if grade == "yes":
+                    filtered_docs.append(d)
+                break
+            except Exception as e:
+                print(f'Error getting retrieval grader score: {e}')
+                time.sleep(2)
     
     citations = "  \n".join(set(doc.metadata.get('filename') for doc in filtered_docs))
     return {"documents": filtered_docs, "citations": citations, "question": question}
@@ -515,6 +506,7 @@ def rerank_fcn(query, bm25, alpha, top_k):
             section_splits_list = markdown_chunked_docs[doc['header']][doc['section_header']]
             section_text = ' '.join([split[1] for split in section_splits_list])
             doc['section_text'] = section_text
+
         return unique_docs_retrieved
     
     except Exception as e:
@@ -540,21 +532,26 @@ async def grade_generation_v_documents_and_question(state):
     documents = state["documents"]
     generation = state["generation"]
     
-    score = await hallucination_grader.ainvoke({"documents": documents, "generation": generation})
-    if score is None:
-        return generation
+    max_retries = 2
+    async def retry_invoke(grader, params):
+        for _ in range(max_retries):
+            try:
+                result = await grader.ainvoke(params)
+                if result:
+                    return result
+            except Exception:
+                await asyncio.sleep(2)
+        return None 
 
-    grade = score.binary_score
-
-    if grade == "yes":
-        score = await answer_grader.ainvoke({"question": question, "generation": generation})
-        grade = score.binary_score
-        if grade == "yes":
-            return "useful"
-        else:
-            return "not useful"
-    else:
+    score_hallucination = await retry_invoke(hallucination_grader, {"documents": documents, "generation": generation})
+    if not score_hallucination or score_hallucination.binary_score != "yes":
         return "not supported"
+    
+    score_answer_grader = await retry_invoke(answer_grader, {"question": question, "generation": generation})
+    if not score_answer_grader:
+        return "not useful"
+    
+    return "useful" if score_answer_grader.binary_score == "yes" else "not useful"    
 
 async def generate(state):
     question = state["question"]
