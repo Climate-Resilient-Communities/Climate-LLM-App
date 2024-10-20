@@ -1,53 +1,18 @@
-# Wlecome to Climate LLM App 🌍
+# Multilingual Climate Chatbot
+## By Climate Resilient Communities 
+[![N|Solid](https://crc.place/content/images/size/w300/2024/08/Logo-no-background-1-1.png)](https://crc.place)
 
-## Introduction
-Welcome to the LLM APP, your go-to application for leveraging language model capabilities seamlessly. Dive into our simple setup process and get started with the power of LLM in no time!
+Our Multilingual Climate Chatbot project aims to make climate research and education accessible to all Torontonians, regardless of their cultural or linguistic background. Many people lack understanding of climate risks and actions they can take, leading to limited engagement, high climate anxiety, and inequality in decision-making power, particularly among youth and marginalized communities. The existing climate information is disjointed and jargon-filled, and often excludes non-English speakers and marginalized communities. 
 
-### Prerequisites
-Before you start, ensure you have the following installed:
-- Python 3.8 or higher
-- Git
+By offering timely, accurate, and easy-to-understand information on local climate risks, adaptation strategies, and best practices, the chatbot helps individuals and communities better understand how to mitigate, prepare for, and respond to climate impacts. It empowers individuals and communities to engage more effectively with climate risks, fostering increased inclusivity, climate literacy, and community action. 
 
-## Installation
+## Architecture
+[![N|Solid](architecture/overall_architecture.png)](https://docs.google.com/presentation/d/1bjtgxTnDqWqT4IHva5UPZYg_LWGynyGw/edit?usp=sharing&ouid=117569134376809994704&rtpof=true&sd=truelangl)
 
-Follow these steps to get the LLM APP up and running on your machine:
+[![N|Solid](architecture/rag_architecture.png)](https://docs.google.com/presentation/d/1bjtgxTnDqWqT4IHva5UPZYg_LWGynyGw/edit?usp=sharing&ouid=117569134376809994704&rtpof=true&sd=truelangl)
 
-#### 1. Clone the Repository
-To get started, clone the repo and switch to the development branch:
-```bash
-git clone https://github.com/Climate-Resilient-Communities/Climate-LLM-App.git
-cd Climate-LLM-App
-git checkout Dev
+[![N|Solid](architecture/language_architecture.png)](https://docs.google.com/presentation/d/1bjtgxTnDqWqT4IHva5UPZYg_LWGynyGw/edit?usp=sharing&ouid=117569134376809994704&rtpof=true&sd=truelangl)
 
+## License
+MIT
 
-#### 2: Install Requirements
-Install all the necessary dependencies:
-
-pip install -r requirements.txt
-
-#### 3: Set Up Your API Keys
-Create a secrets.env file in the root directory. Make sure to read the API Documentation for details on how to configure your API keys.
-
-#### 3: Get the embeddng folder from Google drive
-Pull the embeddings from: https://drive.google.com/drive/folders/1bXr9gdLUu-avgqYVVeSI9K5DY2tzIg83?usp=drive_link
-
-#### 4: Run the Application
-Execute the application:
-
-python app.py
-
-#### 5: Enjoy!
-Congratulations, you are all set! Explore the capabilities of your new LLM APP. :rocket:
-
-Support
-For support, feel free to open an issue on the GitHub repository issues page.
-
-License
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-Contributions
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
-
-Check out our contribution guidelines for more information on how to contribute to the LLM APP.
-
-Happy Coding! 🚀
